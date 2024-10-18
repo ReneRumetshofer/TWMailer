@@ -199,5 +199,44 @@ void clientHandler(int* socket) {
         return;
     }
 
+    do {
+        /////////////////////////////////////////////////////////////////////////
+        // RECEIVE, blocks until a message comes in
+        ssize_t size = recv(*socket, buffer, BUF - 1, 0);
+        if (size == -1) {
+            if (abortRequested) {
+                cerr << "Receive error after requested abort" << endl;
+            }
+            else {
+                cerr << "Receive error" << endl;
+            }
+            cerr << "errno is " << errno << endl;
+            break;
+        }
+
+        if (size == 0) {
+            cout << "Client closed connection." << endl;
+            break;
+        }
+
+        // Remove newline at the end (dependant on OS)
+        if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n') {
+            size -= 2;
+        }
+        else if (buffer[size - 1] == '\n') {
+            --size;
+        }
+
+        buffer[size] = '\0';
+        printf("Message received: %s\n", buffer); // ignore error
+
+        if (send(*current_socket, "OK", 3, 0) == -1)
+        {
+            perror("send answer failed");
+            return NULL;
+        }
+    } while (strcmp(buffer, "quit") != 0 && !abortRequested);
+
+
     shutdownAndCloseSocket(socket);
 }
