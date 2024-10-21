@@ -11,6 +11,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <regex>
+#include <fstream>
 
 #define MAX_BACKLOG 5 // Max number of pending connections in the listen queue
 #define BUF 1024 // Message buffer size
@@ -18,16 +20,31 @@
 using namespace std;
 namespace fs = std::filesystem;
 
+typedef struct Message {
+    int number;
+    string sender;
+    string recipient;
+    string subject;
+    string body;
+} message_t;
+
 void printUsageAndExit();
 int parsePort(char portArgument[]);
 string parseSpoolPath(char spoolPathArgument[]);
 void signalHandler(int signal);
 void shutdownAndCloseSocket(int* socket);
 void clientHandler(int* socket);
+int readLine(int* socket, string* receivedMessage);
+int sendLine(int* socket, string lineToSend);
+
+int handleList(int* socket);
+bool isValidUsername(string username);
+message_t parseMessageFile(fs::path file);
 
 bool abortRequested = false;
 int client_socket = -1;
 int listening_socket = -1;
+string spoolPath;
 
 int main(int argc, char** argv) {
     // Parse arguments
@@ -35,7 +52,7 @@ int main(int argc, char** argv) {
         printUsageAndExit();
     }
     int port = parsePort(argv[1]);
-    string spoolPath = parseSpoolPath(argv[2]);
+    spoolPath = parseSpoolPath(argv[2]);
 
     // Register signal handler
     if (signal(SIGINT, signalHandler) == SIG_ERR) {
@@ -93,13 +110,9 @@ int main(int argc, char** argv) {
         if ((client_socket = accept(listening_socket,
                                 (struct sockaddr *) &clientAddress,
                                 &addressLength)) == -1) {
-            if (abortRequested) {
-                cerr << "Error in accepting client after abort was requested" << endl;
+            if (!abortRequested) {
+                cerr << "Error while accepting new client, errno is " << errno << endl;
             }
-            else {
-                cerr << "Error while accepting new client" << endl;
-            }
-            cerr << "errno is " << errno << endl;
             break;
         }
 
@@ -171,6 +184,7 @@ void signalHandler(int signal) {
     }
     // Unknown signal -> exit
     else {
+        cerr << "Received signal " << signal << ", exiting." << endl;
         exit(signal);
     }
 }
@@ -190,53 +204,151 @@ void shutdownAndCloseSocket(int* socket) {
 }
 
 void clientHandler(int* socket) {
-    char buffer[BUF];
-
-    // SEND welcome message
-    strcpy(buffer, "Welcome to myserver!\r\nPlease enter your commands...\r\n");
-    if (send(*socket, buffer, strlen(buffer), 0) == -1){
-        cerr << "Sending welcome message failed" << endl;
-        return;
-    }
-
-    do {
-        /////////////////////////////////////////////////////////////////////////
-        // RECEIVE, blocks until a message comes in
-        ssize_t size = recv(*socket, buffer, BUF - 1, 0);
-        if (size == -1) {
-            if (abortRequested) {
-                cerr << "Receive error after requested abort" << endl;
-            }
-            else {
-                cerr << "Receive error" << endl;
-            }
-            cerr << "errno is " << errno << endl;
+    string receivedMessage;
+    while (!abortRequested) {
+        if (readLine(socket, &receivedMessage) == -1) {
             break;
         }
 
-        if (size == 0) {
-            cout << "Client closed connection." << endl;
-            break;
+        // Handle use case
+        if(receivedMessage == "LIST") {
+            handleList(socket);
         }
 
-        // Remove newline at the end (dependant on OS)
-        if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n') {
-            size -= 2;
-        }
-        else if (buffer[size - 1] == '\n') {
-            --size;
-        }
-
-        buffer[size] = '\0';
-        printf("Message received: %s\n", buffer); // ignore error
-
-        if (send(*current_socket, "OK", 3, 0) == -1)
-        {
-            perror("send answer failed");
-            return NULL;
-        }
-    } while (strcmp(buffer, "quit") != 0 && !abortRequested);
+        // if (send(*socket, "OK", 3, 0) == -1)
+        // {
+        //     cerr << "Error while responding to client, errno is: " << errno << endl;
+        //     return;
+        // }
+    };
 
 
     shutdownAndCloseSocket(socket);
+}
+
+int readLine(int* socket, string* receivedMessage) {
+    char buffer[BUF];
+
+    ssize_t size = recv(*socket, buffer, BUF - 1, 0);
+    if (size == -1) {
+        if (!abortRequested) {
+            cerr << "Receive error, errno is " << errno << endl;
+        }
+        return -1;
+    }
+
+    if (size == 0) {
+        cout << "Client closed connection." << endl;
+        return -1;
+    }
+
+    // Remove newline at the end (dependant on OS)
+    if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n') {
+        size -= 2;
+    }
+    else if (buffer[size - 1] == '\n') {
+        --size;
+    }
+
+    buffer[size] = '\0';
+    *receivedMessage = buffer;
+
+    return 0; // Success
+}
+
+int sendLine(int* socket, string lineToSend) {
+    lineToSend += "\n";
+    if (send(*socket, lineToSend.c_str(), lineToSend.size() + 1, 0) == -1) {
+            cerr << "Error while sending line \"" << lineToSend << "\"to client, errno is: " << errno << endl;
+            return -1;
+        }
+        return 0;
+}
+
+int handleList(int* socket) {
+    string username;
+    if (readLine(socket, &username) == -1) {
+        return -1;
+    }
+
+    if (!isValidUsername(username)) {
+        return sendLine(socket, "ERR");
+    }
+
+    // Check if user directory exists, if not send back 0 found messages.
+    fs::path spoolDir(spoolPath);
+    fs::path userDir = spoolDir / username;
+    if (!fs::is_directory(userDir)) {
+        return sendLine(socket, "0");
+    }
+
+    // Get all files in userDir
+    vector<fs::path> files;
+    for (const auto &entry : fs::directory_iterator(userDir)) {
+        files.push_back(entry.path());
+    }
+
+    // Read all files and parse them into type message_t
+    vector<message_t> messages;
+    for(const auto &file : files) {
+        try {
+            messages.push_back(parseMessageFile(file));
+        }
+        catch (runtime_error &e) {
+            cerr << e.what() << endl;
+        }
+    }
+
+    for(const auto &message : messages) {
+        string messageLine = to_string(message.number) + ": " + message.subject;
+        if (sendLine(socket, messageLine) == -1) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+message_t parseMessageFile(fs::path file) {
+    try {
+        stoi(file.filename().string());
+    }
+    catch (invalid_argument) {
+        throw runtime_error("Errornous message file named " + file.string() + ", file must be a number");
+    }
+
+    ifstream fileStream(file);
+    if (!fileStream.is_open()) {
+        throw runtime_error("Error while opening message file " + file.string());
+    }
+
+    message_t message;
+    message.number = stoi(file.filename().string());
+
+    string line;
+    if (!getline(fileStream, line)) {
+        throw runtime_error("Errornous message file under " + file.string() + ", cannot find sender");
+    }
+    message.sender = line;
+
+    if (!getline(fileStream, line)) {
+        throw runtime_error("Errornous message file under " + file.string() + ", cannot find recipient");
+    }
+    message.recipient = line;
+
+    if (!getline(fileStream, line)) {
+        throw runtime_error("Errornous message file under " + file.string() + ", cannot find subject line");
+    }
+    message.subject = line;
+
+    while (getline(fileStream, line)) {
+        message.body += line + "\n";
+    }
+
+    return message;
+}
+
+bool isValidUsername(string username) {
+    regex const usernameRegex("^[a-z0-9]{1,8}$"); 
+    return regex_match(username, usernameRegex);
 }
