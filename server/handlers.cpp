@@ -6,6 +6,7 @@
 #include "handlers.hpp"
 #include "utilities.hpp"
 #include "message.hpp"
+#include <algorithm>
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -35,6 +36,7 @@ int handleList(int* socket) {
 
     // Read all files and parse them into type message_t
     vector<message_t> messages;
+
     for(const auto &file : files) {
         try {
             messages.push_back(parseMessageFile(file));
@@ -44,6 +46,15 @@ int handleList(int* socket) {
         }
     }
 
+    // Message ordering descending (newest on top)
+    sort(messages.begin(), messages.end(), [](const message_t& a, const message_t& b) {
+        return a.number > b.number;
+    });
+
+    // Send number of total messages
+    sendLine(socket,to_string(messages.size()));
+
+    // Send individual messages
     for(const auto &message : messages) {
         string messageLine = to_string(message.number) + ": " + message.subject;
         if (sendLine(socket, messageLine) == -1) {
@@ -152,16 +163,12 @@ int handleRead(int* socket) {
     if (sendLine(socket, "OK") == -1) {
         return -1;
     }
-    if (sendLine(socket, message.sender) == -1) {
-        return -1;
-    }
-    if (sendLine(socket, message.recipient) == -1) {
-        return -1;
-    }
-    if (sendLine(socket, message.subject) == -1) {
-        return -1;
-    }
-    return sendLine(socket, message.body);
+    if (sendLine(socket, message.sender) == -1) return -1;
+    if (sendLine(socket, message.recipient) == -1) return -1;
+    if (sendLine(socket, message.subject) == -1) return -1;
+    if (sendLine(socket, message.body) == -1) return -1;
+    return sendLine(socket, ".");
+
 }
 
 int handleDelete(int* socket) {
@@ -190,7 +197,7 @@ int handleDelete(int* socket) {
 }
 
 int readUsernameAndMessageNumber (int* socket, string& username, int& messageNumber) {
-    // Read and parse usernamec
+    // Read and parse username
     if (readLine(socket, &username) == -1) {
         return -1;
     }
