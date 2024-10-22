@@ -10,39 +10,39 @@ using namespace std;
 namespace fs = std::filesystem;
 
 int readLine(int* socket, string* receivedMessage) {
-    char buffer[BUF_SIZE];
+    char buffer;
+    ssize_t bytesRead;
 
-    // Read message from socket
-    ssize_t size = recv(*socket, buffer, BUF_SIZE - 1, 0);
-    if (size == -1) {
-        if (!abortRequested) {
-            cerr << "Receive error, errno is " << errno << endl;
+    receivedMessage->clear();  // Clear the message before reading new data
+
+    while (true) {
+        // Read one byte at a time from the socket
+        bytesRead = recv(*socket, &buffer, 1, 0);  // Use 0 for no special flags
+
+        if (bytesRead == -1) {
+            cerr << "Error reading from socket with " << endl;
+            return -1;  // Return -1 on error
+        } else if (bytesRead == 0) {
+            cout << "Connection closed." << endl;
+            return -1;  // Return -1 if the connection is closed
         }
-        return -1;
-    }
-    else if (size == 0) {
-        cout << "Client closed connection." << endl;
-        return -1;
+
+        if (buffer == '\n') {
+            // Newline encountered, stop reading and return success
+            break;
+        }
+
+        // Append the character to the receivedMessage
+        receivedMessage->append(1, buffer);
     }
 
-    // Remove newline at the end (dependant on OS)
-    if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n') {
-        size -= 2;
-    }
-    else if (buffer[size - 1] == '\n') {
-        --size;
-    }
-
-    buffer[size] = '\0';
-    *receivedMessage = buffer;
-
-    return 0; // Success
+    return 0;  // Return 0 to indicate success
 }
 
 int sendLine(int* socket, string lineToSend) {
     // Convert string to c-string and send it
     lineToSend += "\n";
-    if (send(*socket, lineToSend.c_str(), lineToSend.size() + 1, 0) == -1) {
+    if (send(*socket, lineToSend.c_str(), lineToSend.size(), 0) == -1) {
         cerr << "Error while sending line \"" << lineToSend << "\"to client, errno is: " << errno << endl;
         return -1;
     }
