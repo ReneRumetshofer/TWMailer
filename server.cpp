@@ -38,8 +38,12 @@ int readLine(int* socket, string* receivedMessage);
 int sendLine(int* socket, string lineToSend);
 
 int handleList(int* socket);
+int handleSend(int* socket);
+int handleRead(int* socket);
+int handleDelete(int* socket);
 bool isValidUsername(string username);
 message_t parseMessageFile(fs::path file);
+int writeMessageFile(fs::path file, message_t message);
 
 bool abortRequested = false;
 int client_socket = -1;
@@ -204,24 +208,38 @@ void shutdownAndCloseSocket(int* socket) {
 }
 
 void clientHandler(int* socket) {
-    string receivedMessage;
+    string receivedCommand;
     while (!abortRequested) {
-        if (readLine(socket, &receivedMessage) == -1) {
+        if (readLine(socket, &receivedCommand) == -1) {
             break;
         }
 
-        // Handle use case
-        if(receivedMessage == "LIST") {
+        // Handle different use cases
+        if (receivedCommand == "LIST") {
+            cout << "Handling LIST" << endl;
             handleList(socket);
         }
-
-        // if (send(*socket, "OK", 3, 0) == -1)
-        // {
-        //     cerr << "Error while responding to client, errno is: " << errno << endl;
-        //     return;
-        // }
+        else if (receivedCommand == "SEND") {
+            cout << "Handling SEND" << endl;
+            handleSend(socket);
+        }
+        else if(receivedCommand == "READ") {
+            cout << "Handling READ" << endl;
+            handleRead(socket);
+        }
+        else if(receivedCommand == "DEL") {
+            cout << "Handling DEL" << endl;
+            handleDelete(socket);
+        }
+        else if(receivedCommand == "QUIT") {
+            cout << "Client has sent QUIT, closing connection." << endl;
+            break;
+        }
+        else {
+            cerr << "Unknown command from client: " << receivedCommand << endl;
+            sendLine(socket, "ERR");
+        }
     };
-
 
     shutdownAndCloseSocket(socket);
 }
@@ -229,6 +247,7 @@ void clientHandler(int* socket) {
 int readLine(int* socket, string* receivedMessage) {
     char buffer[BUF];
 
+    // Read message from socket
     ssize_t size = recv(*socket, buffer, BUF - 1, 0);
     if (size == -1) {
         if (!abortRequested) {
@@ -236,8 +255,7 @@ int readLine(int* socket, string* receivedMessage) {
         }
         return -1;
     }
-
-    if (size == 0) {
+    else if (size == 0) {
         cout << "Client closed connection." << endl;
         return -1;
     }
@@ -257,12 +275,13 @@ int readLine(int* socket, string* receivedMessage) {
 }
 
 int sendLine(int* socket, string lineToSend) {
+    // Convert string to c-string and send it
     lineToSend += "\n";
     if (send(*socket, lineToSend.c_str(), lineToSend.size() + 1, 0) == -1) {
-            cerr << "Error while sending line \"" << lineToSend << "\"to client, errno is: " << errno << endl;
-            return -1;
-        }
-        return 0;
+        cerr << "Error while sending line \"" << lineToSend << "\"to client, errno is: " << errno << endl;
+        return -1;
+    }
+    return 0;
 }
 
 int handleList(int* socket) {
@@ -309,11 +328,171 @@ int handleList(int* socket) {
     return 0;
 }
 
+int handleSend(int* socket) {
+    // Read and validate sender, recipient and subject (empty strings are not allowed)
+    string sender;
+    if (readLine(socket, &sender) == -1) {
+        return -1;
+    }
+    if (!isValidUsername(sender)) {
+        return sendLine(socket, "ERR");
+    }
+    string receiver;
+    if (readLine(socket, &receiver) == -1) {
+        return -1;
+    }
+    if (!isValidUsername(receiver)) {
+        return sendLine(socket, "ERR");
+    }
+    string subject;
+    if (readLine(socket, &subject) == -1) {
+        return -1;
+    }
+    if(subject.length() > 80 || subject.empty()) {
+        return sendLine(socket, "ERR");
+    }
+
+    // Until client sends ".\n" read message body lines
+    string body;
+    string line;
+    while (line != ".") {
+        if (readLine(socket, &line) == -1) {
+            return -1;
+        }
+        if (line == ".") {
+            break;
+        }
+        body += line + "\n";
+    }
+
+    // Check if recipient directory exists, if not create it
+    fs::path spoolDir(spoolPath);
+    fs::path recipientDir = spoolDir / receiver;
+    if (!fs::is_directory(recipientDir)) {
+        if (!fs::create_directory(recipientDir)) {
+            cerr << "Error while creating recipient directory " << recipientDir.string() << endl;
+            return sendLine(socket, "ERR");
+        }
+    }
+
+    // Find next message number
+    int nextMessageNumber = 1;
+    for (const auto &entry : fs::directory_iterator(recipientDir)) {
+        try {
+            int messageNumber = stoi(entry.path().filename().string());
+            if (messageNumber >= nextMessageNumber) {
+                nextMessageNumber = messageNumber + 1;
+            }
+        }
+        catch (invalid_argument &e) {
+            cerr << "Errornous message file named " << entry.path().string() << ", file must be a number - ignoring files" << endl;
+        }
+    }
+
+    // Construct message
+    message_t message;
+    message.number = nextMessageNumber;
+    message.sender = sender;
+    message.recipient = receiver;
+    message.subject = subject;
+    message.body = body;
+
+    // Write message file
+    fs::path messageFile = recipientDir / to_string(nextMessageNumber);
+    if (writeMessageFile(messageFile, message) == -1) {
+        return sendLine(socket, "ERR");
+    }
+    return sendLine(socket, "OK");
+}
+
+int readUsernameAndMessageNumber (int* socket, string& username, int& messageNumber) {
+    // Read and parse username
+    if (readLine(socket, &username) == -1) {
+        return -1;
+    }
+    if (!isValidUsername(username)) {
+        return sendLine(socket, "ERR");
+    }
+
+    // Read message number and parse to integer
+    string messageNumberRaw;
+    if (readLine(socket, &messageNumberRaw) == -1) {
+        return -1;
+    }
+    try {
+        messageNumber = stoi(messageNumberRaw);
+    }
+    catch (invalid_argument &e) {
+        cerr << "Message number must be an integer!" << endl;
+        return sendLine(socket, "ERR");
+    }
+
+    return 0;
+}
+
+int handleRead(int* socket) {
+    string username;
+    int messageNumber;
+    if (readUsernameAndMessageNumber(socket, username, messageNumber)  == -1) {
+        return -1;
+    }
+
+    // Check if message file exists
+    fs::path spoolDir(spoolPath);
+    fs::path userDir = spoolDir / username;
+    fs::path messageFile = userDir / to_string(messageNumber);
+    if (!fs::is_regular_file(messageFile)) {
+        cerr << "Cannot find message file " << messageFile.string() << " for user \"" << username << "\"" << endl;
+        return sendLine(socket, "ERR");
+    }
+
+    // Read message file and send it to client
+    message_t message = parseMessageFile(messageFile);
+    if (sendLine(socket, "OK") == -1) {
+        return -1;
+    }
+    if (sendLine(socket, message.sender) == -1) {
+        return -1;
+    }
+    if (sendLine(socket, message.recipient) == -1) {
+        return -1;
+    }
+    if (sendLine(socket, message.subject) == -1) {
+        return -1;
+    }
+    return sendLine(socket, message.body);
+}
+
+int handleDelete(int* socket) {
+    string username;
+    int messageNumber;
+    if (readUsernameAndMessageNumber(socket, username, messageNumber)  == -1) {
+        return -1;
+    }
+
+    // Check if message file exists
+    fs::path spoolDir(spoolPath);
+    fs::path userDir = spoolDir / username;
+    fs::path messageFile = userDir / to_string(messageNumber);
+    if (!fs::is_regular_file(messageFile)) {
+        cerr << "Cannot find message file " << messageFile.string() << " for user \"" << username << "\"" << endl;
+        return sendLine(socket, "ERR");
+    }
+
+    // Delete message file
+    if (!fs::remove(messageFile)) {
+        cerr << "Error while deleting message file " << messageFile.string() << endl;
+        return sendLine(socket, "ERR");
+    }
+    
+    return sendLine(socket, "OK");
+}
+
 message_t parseMessageFile(fs::path file) {
     try {
         stoi(file.filename().string());
     }
-    catch (invalid_argument) {
+    catch (invalid_argument &e) {
         throw runtime_error("Errornous message file named " + file.string() + ", file must be a number");
     }
 
@@ -346,6 +525,21 @@ message_t parseMessageFile(fs::path file) {
     }
 
     return message;
+}
+
+int writeMessageFile(fs::path file, message_t message) {
+    ofstream fileStream(file);
+    if (!fileStream.is_open()) {
+        cerr << "Error while opening message file " << file.string() << endl;
+        return -1;
+    }
+
+    fileStream << message.sender << endl;
+    fileStream << message.recipient << endl;
+    fileStream << message.subject << endl;
+    fileStream << message.body;
+
+    return 0;
 }
 
 bool isValidUsername(string username) {
