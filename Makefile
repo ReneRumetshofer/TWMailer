@@ -4,7 +4,7 @@ CFLAGS=-g -Wall -Wextra -O -std=c++17 -pthread
 LIBS=-lldap -llber
 
 rebuild: clean all
-all: ./target/server
+all: ./target/server ./target/client
 
 clean:
 	clear
@@ -24,3 +24,9 @@ clean:
 
 ./target/server: ./obj/message.o ./obj/handlers.o ./obj/utilities.o ./obj/server.o
 	${CC} ${CFLAGS} -o target/server ./obj/message.o ./obj/handlers.o ./obj/utilities.o ./obj/server.o ${LIBS}
+
+./obj/client.o: client/client.cpp
+	${CC} ${CFLAGS} -o obj/client.o client/client.cpp -c
+
+./target/client: ./obj/client.o
+	${CC} ${CFLAGS} -o target/client ./obj/client.o ${LIBS}
