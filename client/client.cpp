@@ -178,8 +178,7 @@ void userList(const int socket) {
     cout << "Enter username: ";
     getline(cin, username);
 
-    sendMessage(socket, "LIST\n");
-    sendMessage(socket, username + "\n");
+
     autoList(socket, username, true);
 }
 
@@ -188,6 +187,9 @@ string autoList(int socket, const string& username, const bool printReturn) {
     // String containing the full return message
     string fullReply;
     string buffer;
+
+    sendMessage(socket, "LIST\n");
+    sendMessage(socket, username + "\n");
 
     string mailAmountString;
     readLine(&socket, &mailAmountString);
