@@ -10,8 +10,17 @@ clean:
 	clear
 	rm -f target/* obj/*
 
-./obj/server.o: server.cpp
-	${CC} ${CFLAGS} -o obj/server.o server.cpp -c
+./obj/message.o: server/message.cpp
+	${CC} ${CFLAGS} -o obj/message.o server/message.cpp -c
 
-./target/server: ./obj/server.o
-	${CC} ${CFLAGS} -o target/server obj/server.o ${LIBS}
+./obj/handlers.o: server/handlers.cpp
+	${CC} ${CFLAGS} -o obj/handlers.o server/handlers.cpp -c
+
+./obj/utilities.o: server/utilities.cpp
+	${CC} ${CFLAGS} -o obj/utilities.o server/utilities.cpp -c
+
+./obj/server.o: server/server.cpp
+	${CC} ${CFLAGS} -o obj/server.o server/server.cpp -c
+
+./target/server: ./obj/message.o ./obj/handlers.o ./obj/utilities.o ./obj/server.o
+	${CC} ${CFLAGS} -o target/server ./obj/message.o ./obj/handlers.o ./obj/utilities.o ./obj/server.o ${LIBS}
