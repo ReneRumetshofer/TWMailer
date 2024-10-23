@@ -15,28 +15,31 @@ int readLine(int* socket, string* receivedMessage) {
 
     receivedMessage->clear();  // Clear the message before reading new data
 
+    // Reading the whole buffer (for example 1024 bytes max) does not work, as TCP can put to message lines into one packet that would need to be read separately
     while (true) {
         // Read one byte at a time from the socket
-        bytesRead = recv(*socket, &buffer, 1, 0);  // Use 0 for no special flags
+        bytesRead = recv(*socket, &buffer, 1, 0); 
 
+        // When recv returns -1 -> an error occurred
         if (bytesRead == -1) {
-            cerr << "Error reading from socket with " << endl;
-            return -1;  // Return -1 on error
-        } else if (bytesRead == 0) {
-            cout << "Connection closed." << endl;
-            return -1;  // Return -1 if the connection is closed
+            cerr << "Error reading from socket, errno is " << errno << endl;
+            return -1; 
+        } 
+        else if (bytesRead == 0) {
+            cout << "Client closed connection unexpectedly" << endl;
+            return -1;
         }
 
+        // Only when newline character is found, stop reading bytes
         if (buffer == '\n') {
-            // Newline encountered, stop reading and return success
             break;
         }
 
-        // Append the character to the receivedMessage
+        // Append the newly received character to the receivedMessage
         receivedMessage->append(1, buffer);
     }
 
-    return 0;  // Return 0 to indicate success
+    return 0;
 }
 
 int sendLine(int* socket, string lineToSend) {

@@ -7,12 +7,13 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <cstring>
-#include "../server/message.hpp"
+#include "../shared/message.hpp"
+#include "../shared/utilities.hpp"
 
 using namespace std;
 
 void runInteractiveMode(int socket);
-void runTestScriptMode(const string& filename, int socket);
+// void runTestScriptMode(const string& filename, int socket);
 bool sendCommandAndCheckResponse(int socket, const string& command, const vector<string>& inputs, const vector<string>& expected);
 void sendMessage(int socket, const string& message);
 void sendData(int socket, const string& data);
@@ -84,7 +85,8 @@ int main(int argc, char** argv) {
     }
 
     if (testMode) {
-        runTestScriptMode(scriptFile, client_socket);
+        // runTestScriptMode(scriptFile, client_socket);
+        cout << "Test mode not implemented yet." << endl;
     } else {
         runInteractiveMode(client_socket);
     }
@@ -126,8 +128,8 @@ void runInteractiveMode(int socket) {
 }
 
 //TODO: TO BE IMPLEMENTED -> IGNORE FOR NOW (DEAD CODE)
-void runTestScriptMode(const string& filename, int socket) {
-}
+// void runTestScriptMode(const string& filename, int socket) {
+// }
 
 void userSend(int socket) {
     string sender, receiver, subject, body, line;
@@ -277,35 +279,4 @@ void sendMessage(int socket, const string& message) {
     if (write(socket, message.c_str(), message.length()) == -1) {
         cerr << "Error sending message: " << message << endl;
     }
-
-}
-
-int readLine(int* socket, string* receivedMessage) {
-    char buffer;
-    ssize_t bytesRead;
-
-    receivedMessage->clear();  // Clear the message before reading new data
-
-    while (true) {
-        // Read one byte at a time from the socket
-        bytesRead = recv(*socket, &buffer, 1, 0);  // Use 0 for no special flags
-
-        if (bytesRead == -1) {
-            cerr << "Error reading from socket with " << endl;
-            return -1;  // Return -1 on error
-        } else if (bytesRead == 0) {
-            cout << "Connection closed." << endl;
-            return -1;  // Return -1 if the connection is closed
-        }
-
-        if (buffer == '\n') {
-            // Newline encountered, stop reading and return success
-            break;
-        }
-
-        // Append the character to the receivedMessage
-        receivedMessage->append(1, buffer);
-    }
-
-    return 0;  // Return 0 to indicate success
 }

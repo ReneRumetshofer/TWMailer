@@ -13,10 +13,10 @@
 #include <unistd.h>
 #include <regex>
 #include <fstream>
-#include "utilities.hpp"
 #include "handlers.hpp"
-#include "message.hpp"
-#include "globals.hpp"
+#include "../shared/utilities.hpp"
+#include "../shared/message.hpp"
+#include "../shared/globals.hpp"
 
 using namespace std;
 namespace fs = std::filesystem;

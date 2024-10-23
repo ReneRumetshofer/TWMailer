@@ -2,10 +2,10 @@
 #include <string>
 #include <filesystem>
 #include <vector>
-#include "globals.hpp"
 #include "handlers.hpp"
-#include "utilities.hpp"
-#include "message.hpp"
+#include "../shared/globals.hpp"
+#include "../shared/message.hpp"
+#include "../shared/utilities.hpp"
 #include <algorithm>
 
 using namespace std;
@@ -167,8 +167,8 @@ int handleRead(int* socket) {
     if (sendLine(socket, message.recipient) == -1) return -1;
     if (sendLine(socket, message.subject) == -1) return -1;
     if (sendLine(socket, message.body) == -1) return -1;
+    
     return sendLine(socket, ".");
-
 }
 
 int handleDelete(int* socket) {
