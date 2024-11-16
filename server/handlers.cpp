@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <vector>
 #include "handlers.hpp"
+#include "blacklist.hpp"
 #include "../shared/globals.hpp"
 #include "../shared/message.hpp"
 #include "../shared/utilities.hpp"
@@ -11,19 +12,10 @@
 using namespace std;
 namespace fs = std::filesystem;
 
-int handleList(int socket) {
-    string username;
-    if (readLine(socket, &username) == -1) {
-        return -1;
-    }
-
-    if (!isValidUsername(username)) {
-        return sendLine(socket, "ERR");
-    }
-
+int handleList(int socket, string loggedInUser) {
     // Check if user directory exists, if not send back 0 found messages.
     fs::path spoolDir(spoolPath);
-    fs::path userDir = spoolDir / MESSAGES_DIR / username;
+    fs::path userDir = spoolDir / MESSAGES_DIR / loggedInUser;
     if (!fs::is_directory(userDir)) {
         return sendLine(socket, "0");
     }
@@ -36,7 +28,6 @@ int handleList(int socket) {
 
     // Read all files and parse them into type message_t
     vector<message_t> messages;
-
     for(const auto &file : files) {
         try {
             messages.push_back(parseMessageFile(file));
@@ -65,15 +56,8 @@ int handleList(int socket) {
     return 0;
 }
 
-int handleSend(int socket) {
-    // Read and validate sender, recipient and subject (empty strings are not allowed)
-    string sender;
-    if (readLine(socket, &sender) == -1) {
-        return -1;
-    }
-    if (!isValidUsername(sender)) {
-        return sendLine(socket, "ERR");
-    }
+int handleSend(int socket, string loggedInUser) {
+    // Read and validate recipient and subject (empty strings are not allowed)
     string receiver;
     if (readLine(socket, &receiver) == -1) {
         return -1;
@@ -129,7 +113,7 @@ int handleSend(int socket) {
     // Construct message
     message_t message;
     message.number = nextMessageNumber;
-    message.sender = sender;
+    message.sender = loggedInUser;
     message.recipient = receiver;
     message.subject = subject;
     message.body = body;
@@ -142,19 +126,18 @@ int handleSend(int socket) {
     return sendLine(socket, "OK");
 }
 
-int handleRead(int socket) {
-    string username;
+int handleRead(int socket, string loggedInUser) {
     int messageNumber;
-    if (readUsernameAndMessageNumber(socket, username, messageNumber)  == -1) {
+    if (readMessageNumber(socket, messageNumber)  == -1) {
         return -1;
     }
 
     // Check if message file exists
     fs::path spoolDir(spoolPath);
-    fs::path userDir = spoolDir / MESSAGES_DIR / username;
+    fs::path userDir = spoolDir / MESSAGES_DIR / loggedInUser;
     fs::path messageFile = userDir / to_string(messageNumber);
     if (!fs::is_regular_file(messageFile)) {
-        cerr << "Cannot find message file " << messageFile.string() << " for user \"" << username << "\"" << endl;
+        cerr << "Cannot find message file " << messageFile.string() << " for user \"" << loggedInUser << "\"" << endl;
         return sendLine(socket, "ERR");
     }
 
@@ -171,19 +154,18 @@ int handleRead(int socket) {
     return sendLine(socket, ".");
 }
 
-int handleDelete(int socket) {
-    string username;
+int handleDelete(int socket, string loggedInUser) {
     int messageNumber;
-    if (readUsernameAndMessageNumber(socket, username, messageNumber)  == -1) {
+    if (readMessageNumber(socket, messageNumber)  == -1) {
         return -1;
     }
 
     // Check if message file exists
     fs::path spoolDir(spoolPath);
-    fs::path userDir = spoolDir / MESSAGES_DIR / username;
+    fs::path userDir = spoolDir / MESSAGES_DIR / loggedInUser;
     fs::path messageFile = userDir / to_string(messageNumber);
     if (!fs::is_regular_file(messageFile)) {
-        cerr << "Cannot find message file " << messageFile.string() << " for user \"" << username << "\"" << endl;
+        cerr << "Cannot find message file " << messageFile.string() << " for user \"" << loggedInUser << "\"" << endl;
         return sendLine(socket, "ERR");
     }
 
@@ -196,16 +178,32 @@ int handleDelete(int socket) {
     return sendLine(socket, "OK");
 }
 
-int readUsernameAndMessageNumber (int socket, string& username, int& messageNumber) {
-    // Read and parse username
+int handleLogin(int socket, string clientIp, string& loggedInUser) {
+    // Read and parse username, read password
+    string username;
+    string password;
     if (readLine(socket, &username) == -1) {
         return -1;
     }
     if (!isValidUsername(username)) {
         return sendLine(socket, "ERR");
     }
+    if (readLine(socket, &password) == -1) {
+        return -1;
+    }
 
-    // Read message number and parse to integer
+    // Stub for LDAP connection
+    if (username != "admin" || password != "admin") {
+        bool blacklisted = recordFailedLogin(clientIp);
+        return blacklisted ? -1 : sendLine(socket, "ERR"); // Return -1 to close connection on fresh blacklist
+    }
+
+    resetFailedLoginAttempts(clientIp);
+    loggedInUser = username;
+    return sendLine(socket, "OK");
+}
+
+int readMessageNumber (int socket, int& messageNumber) {
     string messageNumberRaw;
     if (readLine(socket, &messageNumberRaw) == -1) {
         return -1;

@@ -2,6 +2,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
+#include <mutex>
 #include "blacklist.hpp"
 #include "../shared/globals.hpp"
 
@@ -33,4 +35,39 @@ bool isIpBlacklisted(std::string ip) {
     }
 
     return currentTime < blacklistTime;
+}
+
+map<string, int> failedLoginAttempts; // Failures per IP
+mutex failedLoginAttemptsMutex;
+
+// Return true if the IP is blacklisted
+bool recordFailedLogin(string clientIp) {
+    //  Check if the IP is already blacklisted -> avoid case where two clients from same IP are used
+    if (isIpBlacklisted(clientIp)) {
+        return true;
+    }
+
+    std::lock_guard<std::mutex> lock(failedLoginAttemptsMutex);
+    
+    failedLoginAttempts[clientIp]++;
+    if(failedLoginAttempts[clientIp] >= BLACKLIST_LOGIN_ATTEMPTS) {
+        fs::path spoolDir(spoolPath);
+        fs::path blacklistDir = spoolDir / BLACKLIST_DIR;
+        fs::path ipBlacklistFile = blacklistDir / clientIp;
+
+        ofstream file(ipBlacklistFile);
+        file << to_string(time(nullptr) + BLACKLIST_SECONDS) << endl;
+        file.close();
+        failedLoginAttempts[clientIp] = 0;
+
+        cout << "IP " << clientIp << " has been blacklisted for " << BLACKLIST_SECONDS << " seconds." << endl;
+
+        return true;
+    }
+    return false;
+}
+
+void resetFailedLoginAttempts(string clientIp) {
+    std::lock_guard<std::mutex> lock(failedLoginAttemptsMutex);
+    failedLoginAttempts[clientIp]  = 0;
 }

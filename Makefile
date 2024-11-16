@@ -1,6 +1,6 @@
 CC=g++
 
-CFLAGS=-g -Wall -Wextra -O -std=c++17 -pthread
+CFLAGS=-g -Wall -Wextra -std=c++17 -pthread
 LIBS=-lldap -llber -lpthread
 
 rebuild: clean all

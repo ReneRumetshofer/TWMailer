@@ -5,6 +5,7 @@
 #include <iostream>
 #include <sys/socket.h>
 #include <regex>
+#include <unistd.h>
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -55,4 +56,18 @@ int sendLine(int socket, string lineToSend) {
 bool isValidUsername(string username) {
     regex const usernameRegex("^[a-z0-9]{1,8}$"); 
     return regex_match(username, usernameRegex);
+}
+
+void shutdownAndCloseSocket(int socket) {
+    if (socket != -1) {
+        // Shutdown initiates a TCP closing sequence (FIN) to properly close the connection
+        if (shutdown(socket, SHUT_RDWR) == -1) {
+            cerr << "Error while shutting down socket." << endl;
+        }
+        // Close the socket entriely.
+        if (close(socket) == -1) {
+            cerr << "Error while closing down socket." << endl;
+        }
+        socket = -1;
+    }
 }

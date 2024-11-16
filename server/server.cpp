@@ -28,8 +28,7 @@ void printUsageAndExit();
 int parsePort(char portArgument[]);
 string parseSpoolPath(char spoolPathArgument[]);
 void signalHandler(int signal);
-void shutdownAndCloseSocket(int socket);
-void clientHandler(int socket);
+void clientHandler(int socket, string clientIp);
 
 // Globals (as defined in globals.hpp)
 bool abortRequested = false;
@@ -119,7 +118,7 @@ int main(int argc, char** argv) {
 
         // Start client handler thread
         cout << "Client connected from " << clientIp << ":" << ntohs(clientAddress.sin_port) << "!" << endl;
-        thread clientThread(clientHandler, client_socket);
+        thread clientThread(clientHandler, client_socket, clientIp);
         clientThread.detach(); // needed, otherwise the thread fails with an exception almost immediately
     }
 
@@ -193,51 +192,55 @@ void signalHandler(int signal) {
     }
 }
 
-void shutdownAndCloseSocket(int socket) {
-    if (socket != -1) {
-        // Shutdown initiates a TCP closing sequence (FIN) to properly close the connection
-        if (shutdown(socket, SHUT_RDWR) == -1) {
-            cerr << "Error while shutting down socket." << endl;
-        }
-        // Close the socket entriely.
-        if (close(socket) == -1) {
-            cerr << "Error while closing down socket." << endl;
-        }
-        socket = -1;
-    }
-}
-
-void clientHandler(int socket) {
+void clientHandler(int socket, string clientIp) {
     string receivedCommand;
+    string loggedInUser;
     while (!abortRequested) {
         if (readLine(socket, &receivedCommand) == -1) {
             break;
         }
 
-        // Handle different use cases
-        if (receivedCommand == "LIST") {
-            cout << "Handling LIST" << endl;
-            handleList(socket);
+        // Only allow mail commands if logged in
+        if (!loggedInUser.empty()) {
+            if (receivedCommand == "LIST") {
+                handleList(socket, loggedInUser);
+            }
+            else if (receivedCommand == "SEND") {
+                handleSend(socket, loggedInUser);
+            }
+            else if(receivedCommand == "READ") {
+                handleRead(socket, loggedInUser);
+            }
+            else if(receivedCommand == "DEL") {
+                handleDelete(socket, loggedInUser);
+            }
+            else if(receivedCommand == "QUIT") {
+                cout << "Client has sent QUIT, closing connection." << endl;
+                break;
+            }
+            else {
+                cerr << "Unknown command from client: " << receivedCommand << endl;
+                sendLine(socket, "ERR");
+            }
         }
-        else if (receivedCommand == "SEND") {
-            cout << "Handling SEND" << endl;
-            handleSend(socket);
-        }
-        else if(receivedCommand == "READ") {
-            cout << "Handling READ" << endl;
-            handleRead(socket);
-        }
-        else if(receivedCommand == "DEL") {
-            cout << "Handling DEL" << endl;
-            handleDelete(socket);
-        }
-        else if(receivedCommand == "QUIT") {
-            cout << "Client has sent QUIT, closing connection." << endl;
-            break;
-        }
+        // Only allow LOGIN command if not logged in
         else {
-            cerr << "Unknown command from client: " << receivedCommand << endl;
-            sendLine(socket, "ERR");
+            if (receivedCommand == "LOGIN") {
+                int handleLoginResult = handleLogin(socket, clientIp, loggedInUser);
+                if (handleLoginResult == -1) {
+                    break;
+                }
+
+                cout << loggedInUser << " has logged in." << endl;
+            }
+            else if(receivedCommand == "QUIT") {
+                cout << "Client has sent QUIT, closing connection." << endl;
+                break;
+            }
+            else {
+                cerr << "Client not logged in, refusing command: " << receivedCommand << endl;
+                sendLine(socket, "ERR");
+            }
         }
     };
 
