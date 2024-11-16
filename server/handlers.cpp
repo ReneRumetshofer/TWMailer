@@ -11,7 +11,7 @@
 using namespace std;
 namespace fs = std::filesystem;
 
-int handleList(int* socket) {
+int handleList(int socket) {
     string username;
     if (readLine(socket, &username) == -1) {
         return -1;
@@ -23,7 +23,7 @@ int handleList(int* socket) {
 
     // Check if user directory exists, if not send back 0 found messages.
     fs::path spoolDir(spoolPath);
-    fs::path userDir = spoolDir / username;
+    fs::path userDir = spoolDir / MESSAGES_DIR / username;
     if (!fs::is_directory(userDir)) {
         return sendLine(socket, "0");
     }
@@ -65,7 +65,7 @@ int handleList(int* socket) {
     return 0;
 }
 
-int handleSend(int* socket) {
+int handleSend(int socket) {
     // Read and validate sender, recipient and subject (empty strings are not allowed)
     string sender;
     if (readLine(socket, &sender) == -1) {
@@ -104,7 +104,7 @@ int handleSend(int* socket) {
 
     // Check if recipient directory exists, if not create it
     fs::path spoolDir(spoolPath);
-    fs::path recipientDir = spoolDir / receiver;
+    fs::path recipientDir = spoolDir / MESSAGES_DIR / receiver;
     if (!fs::is_directory(recipientDir)) {
         if (!fs::create_directory(recipientDir)) {
             cerr << "Error while creating recipient directory " << recipientDir.string() << endl;
@@ -142,7 +142,7 @@ int handleSend(int* socket) {
     return sendLine(socket, "OK");
 }
 
-int handleRead(int* socket) {
+int handleRead(int socket) {
     string username;
     int messageNumber;
     if (readUsernameAndMessageNumber(socket, username, messageNumber)  == -1) {
@@ -151,7 +151,7 @@ int handleRead(int* socket) {
 
     // Check if message file exists
     fs::path spoolDir(spoolPath);
-    fs::path userDir = spoolDir / username;
+    fs::path userDir = spoolDir / MESSAGES_DIR / username;
     fs::path messageFile = userDir / to_string(messageNumber);
     if (!fs::is_regular_file(messageFile)) {
         cerr << "Cannot find message file " << messageFile.string() << " for user \"" << username << "\"" << endl;
@@ -171,7 +171,7 @@ int handleRead(int* socket) {
     return sendLine(socket, ".");
 }
 
-int handleDelete(int* socket) {
+int handleDelete(int socket) {
     string username;
     int messageNumber;
     if (readUsernameAndMessageNumber(socket, username, messageNumber)  == -1) {
@@ -180,7 +180,7 @@ int handleDelete(int* socket) {
 
     // Check if message file exists
     fs::path spoolDir(spoolPath);
-    fs::path userDir = spoolDir / username;
+    fs::path userDir = spoolDir / MESSAGES_DIR / username;
     fs::path messageFile = userDir / to_string(messageNumber);
     if (!fs::is_regular_file(messageFile)) {
         cerr << "Cannot find message file " << messageFile.string() << " for user \"" << username << "\"" << endl;
@@ -196,7 +196,7 @@ int handleDelete(int* socket) {
     return sendLine(socket, "OK");
 }
 
-int readUsernameAndMessageNumber (int* socket, string& username, int& messageNumber) {
+int readUsernameAndMessageNumber (int socket, string& username, int& messageNumber) {
     // Read and parse username
     if (readLine(socket, &username) == -1) {
         return -1;

@@ -30,8 +30,6 @@ Message autoRead(int socket, const string& username, const string& messageNr, bo
 void userDelete(int socket);
 string autoDelete(int socket, const string& username, const string& messageNr, bool printReturn);
 
-int readLine(int* socket, string* receivedMessage);
-
 int main(int argc, char** argv) {
     if (argc < 3) {
         cerr << "Usage: " << argv[0] << " <server_ip> <port> [-t <test_script>]" << endl;
@@ -166,7 +164,7 @@ string autoSend(int socket, const string& sender, const string& receiver, const 
     sendMessage(socket, ".\n");
 
     string reply;
-    readLine(&socket,&reply);
+    readLine(socket,&reply);
 
     // Print reply in usermode
     //TODO: Nicer output depending on return message
@@ -194,11 +192,11 @@ string autoList(int socket, const string& username, const bool printReturn) {
     sendMessage(socket, username + "\n");
 
     string mailAmountString;
-    readLine(&socket, &mailAmountString);
+    readLine(socket, &mailAmountString);
     const int mailAmount = stoi(mailAmountString);
 
     for (int i = 0; i < mailAmount; i++) {
-        readLine(&socket, &buffer);
+        readLine(socket, &buffer);
         fullReply += buffer + "\n";
     }
 
@@ -225,20 +223,20 @@ Message autoRead(int socket, const string& username, const string& messageNr, co
     Message msg;
     string status;
 
-    readLine(&socket, &status);
+    readLine(socket, &status);
     if(status != "OK") {
         if (printReturn) cout << status << endl;
         return msg;
     }
 
     string buffer;
-    readLine(&socket,&msg.sender);
-    readLine(&socket,&msg.recipient);
-    readLine(&socket,&msg.subject);
-    readLine(&socket,&buffer);
+    readLine(socket,&msg.sender);
+    readLine(socket,&msg.recipient);
+    readLine(socket,&msg.subject);
+    readLine(socket,&buffer);
     while(buffer != ".") {
         msg.body += buffer + "\n";
-        readLine(&socket,&buffer);
+        readLine(socket,&buffer);
     }
 
     if (printReturn) {
@@ -270,7 +268,7 @@ string autoDelete(int socket, const string& username, const string& messageNr, b
     sendMessage(socket, messageNr + "\n");
 
     string reply;
-    readLine(&socket,&reply);
+    readLine(socket,&reply);
     if (printReturn) cout << reply << endl;
     return reply;
 }

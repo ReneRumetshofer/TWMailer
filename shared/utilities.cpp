@@ -9,7 +9,7 @@
 using namespace std;
 namespace fs = std::filesystem;
 
-int readLine(int* socket, string* receivedMessage) {
+int readLine(int socket, string* receivedMessage) {
     char buffer;
     ssize_t bytesRead;
 
@@ -18,7 +18,7 @@ int readLine(int* socket, string* receivedMessage) {
     // Reading the whole buffer (for example 1024 bytes max) does not work, as TCP can put to message lines into one packet that would need to be read separately
     while (true) {
         // Read one byte at a time from the socket
-        bytesRead = recv(*socket, &buffer, 1, 0); 
+        bytesRead = recv(socket, &buffer, 1, 0); 
 
         // When recv returns -1 -> an error occurred
         if (bytesRead == -1) {
@@ -42,10 +42,10 @@ int readLine(int* socket, string* receivedMessage) {
     return 0;
 }
 
-int sendLine(int* socket, string lineToSend) {
+int sendLine(int socket, string lineToSend) {
     // Convert string to c-string and send it
     lineToSend += "\n";
-    if (send(*socket, lineToSend.c_str(), lineToSend.size(), 0) == -1) {
+    if (send(socket, lineToSend.c_str(), lineToSend.size(), 0) == -1) {
         cerr << "Error while sending line \"" << lineToSend << "\"to client, errno is: " << errno << endl;
         return -1;
     }

@@ -3,6 +3,9 @@
 
 #include <string>
 
+#define MESSAGES_DIR "messages"
+#define BLACKLIST_DIR "blacklist"
+
 constexpr int BUF_SIZE = 1024; 
 constexpr int MAX_BACKLOG  = 5; // Max number of pending connections in the listen queue
 extern bool abortRequested;

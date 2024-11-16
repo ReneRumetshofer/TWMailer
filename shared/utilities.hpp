@@ -3,8 +3,8 @@
 
 #include <string>
 
-int readLine(int* socket, std::string* receivedMessage);
-int sendLine(int* socket, std::string lineToSend);
+int readLine(int socket, std::string* receivedMessage);
+int sendLine(int socket, std::string lineToSend);
 bool isValidUsername(std::string username);
 
 #endif

@@ -13,7 +13,10 @@
 #include <unistd.h>
 #include <regex>
 #include <fstream>
+#include <thread>
+#include <mutex>
 #include "handlers.hpp"
+#include "blacklist.hpp"
 #include "../shared/utilities.hpp"
 #include "../shared/message.hpp"
 #include "../shared/globals.hpp"
@@ -25,8 +28,8 @@ void printUsageAndExit();
 int parsePort(char portArgument[]);
 string parseSpoolPath(char spoolPathArgument[]);
 void signalHandler(int signal);
-void shutdownAndCloseSocket(int* socket);
-void clientHandler(int* socket);
+void shutdownAndCloseSocket(int socket);
+void clientHandler(int socket);
 
 // Globals (as defined in globals.hpp)
 bool abortRequested = false;
@@ -90,6 +93,7 @@ int main(int argc, char** argv) {
 
     socklen_t addressLength;
     struct sockaddr_in clientAddress;  
+    vector<thread> clientThreads;
     while (!abortRequested) {
         cout << "Waiting for new connections.." << endl;
 
@@ -104,14 +108,26 @@ int main(int argc, char** argv) {
             break;
         }
 
-        // Start client handler
-        cout << "Client connected from " << inet_ntoa(clientAddress.sin_addr) << ":" 
-             << ntohs(clientAddress.sin_port) << "!" << endl;
-        clientHandler(&client_socket);
-        client_socket = -1; // When clientHandler returned, the connection is over and this can be reset
+        // Check blacklist
+        string clientIp = inet_ntoa(clientAddress.sin_addr);
+        bool isBlacklisted = isIpBlacklisted(clientIp);
+        if (isBlacklisted) {
+            cout << "Client IP " << clientIp << " is blacklisted, closing connection." << endl;
+            shutdownAndCloseSocket(client_socket);
+            continue;
+        }
+
+        // Start client handler thread
+        cout << "Client connected from " << clientIp << ":" << ntohs(clientAddress.sin_port) << "!" << endl;
+        thread clientThread(clientHandler, client_socket);
+        clientThread.detach(); // needed, otherwise the thread fails with an exception almost immediately
     }
 
-    shutdownAndCloseSocket(&listening_socket);
+    for(auto &clientThread : clientThreads) {
+        clientThread.join();
+    }
+
+    shutdownAndCloseSocket(listening_socket);
     exit(EXIT_SUCCESS);
 }
 
@@ -168,7 +184,7 @@ void signalHandler(int signal) {
         }
 
         // Shutdown & close listening socket aswell
-        shutdownAndCloseSocket(&listening_socket);
+        shutdownAndCloseSocket(listening_socket);
     }
     // Unknown signal -> exit
     else {
@@ -177,21 +193,21 @@ void signalHandler(int signal) {
     }
 }
 
-void shutdownAndCloseSocket(int* socket) {
-    if (*socket != -1) {
+void shutdownAndCloseSocket(int socket) {
+    if (socket != -1) {
         // Shutdown initiates a TCP closing sequence (FIN) to properly close the connection
-        if (shutdown(*socket, SHUT_RDWR) == -1) {
+        if (shutdown(socket, SHUT_RDWR) == -1) {
             cerr << "Error while shutting down socket." << endl;
         }
         // Close the socket entriely.
-        if (close(*socket) == -1) {
+        if (close(socket) == -1) {
             cerr << "Error while closing down socket." << endl;
         }
-        *socket = -1;
+        socket = -1;
     }
 }
 
-void clientHandler(int* socket) {
+void clientHandler(int socket) {
     string receivedCommand;
     while (!abortRequested) {
         if (readLine(socket, &receivedCommand) == -1) {
