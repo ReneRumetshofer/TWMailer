@@ -4,6 +4,7 @@
 #include <vector>
 #include "handlers.hpp"
 #include "blacklist.hpp"
+#include "ldap_auth.hpp"
 #include "../shared/globals.hpp"
 #include "../shared/message.hpp"
 #include "../shared/utilities.hpp"
@@ -12,7 +13,26 @@
 using namespace std;
 namespace fs = std::filesystem;
 
+// Globals defined in handlers.hpp
+map<string, shared_ptr<mutex>> userMutexes; // Mutex per username
+mutex userMutexesProtection;
+
+shared_ptr<mutex> getUserMutex(string username) {
+    lock_guard<mutex> lock(userMutexesProtection);
+    auto it = userMutexes.find(username);
+    if (it != userMutexes.end()) {
+        return it->second;
+    }
+
+    // Create a new mutex if not found
+    auto newMutex = std::make_shared<std::mutex>();
+    userMutexes[username] = newMutex;
+    return newMutex;
+}
+
 int handleList(int socket, string loggedInUser) {
+    lock_guard<mutex> lock(*getUserMutex(loggedInUser));
+
     // Check if user directory exists, if not send back 0 found messages.
     fs::path spoolDir(spoolPath);
     fs::path userDir = spoolDir / MESSAGES_DIR / loggedInUser;
@@ -86,6 +106,9 @@ int handleSend(int socket, string loggedInUser) {
         body += line + "\n";
     }
 
+    // Lock recipient's user directory
+    lock_guard<mutex> lock(*getUserMutex(receiver));
+
     // Check if recipient directory exists, if not create it
     fs::path spoolDir(spoolPath);
     fs::path recipientDir = spoolDir / MESSAGES_DIR / receiver;
@@ -132,6 +155,8 @@ int handleRead(int socket, string loggedInUser) {
         return -1;
     }
 
+    lock_guard<mutex> lock(*getUserMutex(loggedInUser));
+
     // Check if message file exists
     fs::path spoolDir(spoolPath);
     fs::path userDir = spoolDir / MESSAGES_DIR / loggedInUser;
@@ -159,6 +184,8 @@ int handleDelete(int socket, string loggedInUser) {
     if (readMessageNumber(socket, messageNumber)  == -1) {
         return -1;
     }
+
+    lock_guard<mutex> lock(*getUserMutex(loggedInUser));
 
     // Check if message file exists
     fs::path spoolDir(spoolPath);
@@ -192,8 +219,9 @@ int handleLogin(int socket, string clientIp, string& loggedInUser) {
         return -1;
     }
 
-    // Stub for LDAP connection
-    if (username != "admin" || password != "admin") {
+    // Check login against LDAP server
+    bool loginSuccess = isValidLdapLogin(username, password);
+    if (!loginSuccess) {
         bool blacklisted = recordFailedLogin(clientIp);
         return blacklisted ? -1 : sendLine(socket, "ERR"); // Return -1 to close connection on fresh blacklist
     }

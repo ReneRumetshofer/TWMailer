@@ -10,6 +10,10 @@
 using namespace std;
 namespace fs = std::filesystem;
 
+// Globals defined in blacklist.hpp
+map<string, int> failedLoginAttempts; // Failures per IP
+mutex failedLoginAttemptsMutex;
+
 bool isIpBlacklisted(std::string ip) {
     fs::path spoolDir(spoolPath);
     fs::path blacklistDir = spoolDir / BLACKLIST_DIR;
@@ -36,9 +40,6 @@ bool isIpBlacklisted(std::string ip) {
 
     return currentTime < blacklistTime;
 }
-
-map<string, int> failedLoginAttempts; // Failures per IP
-mutex failedLoginAttemptsMutex;
 
 // Return true if the IP is blacklisted
 bool recordFailedLogin(string clientIp) {

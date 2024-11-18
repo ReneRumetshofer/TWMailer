@@ -22,11 +22,14 @@ clean:
 ./obj/utilities.o: shared/utilities.cpp
 	${CC} ${CFLAGS} -o obj/utilities.o shared/utilities.cpp -c
 
+./obj/ldap_auth.o: server/ldap_auth.cpp
+	${CC} ${CFLAGS} -o obj/ldap_auth.o server/ldap_auth.cpp -c
+
 ./obj/server.o: server/server.cpp
 	${CC} ${CFLAGS} -o obj/server.o server/server.cpp -c
 
-./target/server: ./obj/message.o ./obj/handlers.o ./obj/blacklist.o ./obj/utilities.o ./obj/server.o
-	${CC} ${CFLAGS} -o target/server ./obj/message.o ./obj/handlers.o ./obj/utilities.o ./obj/blacklist.o ./obj/server.o ${LIBS}
+./target/server: ./obj/message.o ./obj/handlers.o ./obj/blacklist.o ./obj/utilities.o ./obj/ldap_auth.o ./obj/server.o
+	${CC} ${CFLAGS} -o target/server ./obj/message.o ./obj/handlers.o ./obj/utilities.o ./obj/blacklist.o ./obj/ldap_auth.o ./obj/server.o ${LIBS}
 
 ./obj/client.o: client/client.cpp
 	${CC} ${CFLAGS} -o obj/client.o client/client.cpp -c

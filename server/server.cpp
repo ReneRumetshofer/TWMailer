@@ -214,6 +214,11 @@ void clientHandler(int socket, string clientIp) {
             else if(receivedCommand == "DEL") {
                 handleDelete(socket, loggedInUser);
             }
+            else if(receivedCommand == "LOGOUT") {
+                loggedInUser.clear();
+                cout << "Client has logged out." << endl;
+                sendLine(socket, "OK");
+            }
             else if(receivedCommand == "QUIT") {
                 cout << "Client has sent QUIT, closing connection." << endl;
                 break;
@@ -231,7 +236,9 @@ void clientHandler(int socket, string clientIp) {
                     break;
                 }
 
-                cout << loggedInUser << " has logged in." << endl;
+                if (!loggedInUser.empty()) {
+                    cout << loggedInUser << " has logged in." << endl;
+                }
             }
             else if(receivedCommand == "QUIT") {
                 cout << "Client has sent QUIT, closing connection." << endl;
