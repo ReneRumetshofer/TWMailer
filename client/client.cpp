@@ -285,7 +285,6 @@ void sendMessage(int socket, const string& message) {
 
 bool userLogin(int socket) {
     string username, password;
-    char ch;
 
     cout << "Enter username: ";
     getline(cin, username);
