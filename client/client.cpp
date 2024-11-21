@@ -9,6 +9,10 @@
 #include <cstring>
 #include "../shared/message.hpp"
 #include "../shared/utilities.hpp"
+#include <iostream>
+#include <termios.h>
+#include <unistd.h>
+
 
 using namespace std;
 
@@ -19,16 +23,21 @@ void sendMessage(int socket, const string& message);
 void sendData(int socket, const string& data);
 
 void userSend(int socket);
-string autoSend(int socket, const string& sender, const string& receiver, const string& subject, const string& body, bool printReturn);
+string autoSend(int socket, const string& receiver, const string& subject, const string& body, bool printReturn);
 
 void userList(int socket);
-string autoList(int socket, const string& username, bool printReturn);
+string autoList(int socket, bool printReturn);
 
 void userRead(int socket);
-Message autoRead(int socket, const string& username, const string& messageNr, bool printReturn);
+Message autoRead(int socket, const string& messageNr, bool printReturn);
 
 void userDelete(int socket);
-string autoDelete(int socket, const string& username, const string& messageNr, bool printReturn);
+string autoDelete(int socket, const string& messageNr, bool printReturn);
+
+bool userLogin(int socket);
+int getch();
+const char *getpass();
+
 
 int main(int argc, char** argv) {
     if (argc < 3) {
@@ -96,31 +105,38 @@ int main(int argc, char** argv) {
 
 
 void runInteractiveMode(int socket) {
+    bool loggedIn = false;
     string command;
     while (true) {
-        cout << "Enter command (SEND, LIST, READ, DEL, QUIT): ";
-        getline(cin, command);
-
-        if (command == "QUIT") {
-            sendMessage(socket, "QUIT\n");
-            break;  // Quit and close the socket
-        }
-
-        if (command == "SEND") {
-            userSend(socket);
-        }
-        else if (command == "LIST") {
-            userList(socket);
-        }
-        else if (command == "READ") {
-            userRead(socket);
-        }
-        else if (command == "DEL") {
-            userDelete(socket);
+        if (!loggedIn) {
+            cout << "Login" << endl;
+            loggedIn = userLogin(socket);
         }
         else {
-            cerr << "Unknown command!" << endl;
-            continue;
+            cout << "Enter command (SEND, LIST, READ, DEL, QUIT): ";
+            getline(cin, command);
+
+            if (command == "QUIT") {
+                sendMessage(socket, "QUIT\n");
+                break;  // Quit and close the socket
+            }
+
+            if (command == "SEND") {
+                userSend(socket);
+            }
+            else if (command == "LIST") {
+                userList(socket);
+            }
+            else if (command == "READ") {
+                userRead(socket);
+            }
+            else if (command == "DEL") {
+                userDelete(socket);
+            }
+            else {
+                cerr << "Unknown command!" << endl;
+                continue;
+            }
         }
     }
 }
@@ -132,8 +148,9 @@ void runInteractiveMode(int socket) {
 void userSend(int socket) {
     string sender, receiver, subject, body, line;
 
-    cout << "Enter sender: ";
-    getline(cin, sender);
+    //Removed for PRO
+    //cout << "Enter sender: ";
+    //getline(cin, sender);
     cout << "Enter receiver: ";
     getline(cin, receiver);
     cout << "Enter subject (max 80 chars): ";
@@ -151,13 +168,12 @@ void userSend(int socket) {
         }
         body += line + "\n";
     }
-    autoSend(socket, sender, receiver, subject, body, true);
+    autoSend(socket, receiver, subject, body, true);
 
 }
 
-string autoSend(int socket, const string& sender, const string& receiver, const string& subject, const string& body, bool printReturn) {
+string autoSend(int socket, const string& receiver, const string& subject, const string& body, bool printReturn) {
     sendMessage(socket, "SEND\n");
-    sendMessage(socket, sender + "\n");
     sendMessage(socket, receiver + "\n");
     sendMessage(socket, subject + "\n");
     sendMessage(socket, body);
@@ -174,22 +190,16 @@ string autoSend(int socket, const string& sender, const string& receiver, const 
 }
 
 void userList(const int socket) {
-    string username;
-    cout << "Enter username: ";
-    getline(cin, username);
-
-
-    autoList(socket, username, true);
+    autoList(socket, true);
 }
 
-string autoList(int socket, const string& username, const bool printReturn) {
+string autoList(int socket, const bool printReturn) {
 
     // String containing the full return message
     string fullReply;
     string buffer;
 
     sendMessage(socket, "LIST\n");
-    sendMessage(socket, username + "\n");
 
     string mailAmountString;
     readLine(socket, &mailAmountString);
@@ -207,17 +217,14 @@ string autoList(int socket, const string& username, const bool printReturn) {
 }
 
 void userRead(int socket) {
-    string username, messageNumber;
-    cout << "Enter username: ";
-    getline(cin, username);
+    string messageNumber;
     cout << "Enter message number: ";
     getline(cin, messageNumber);
-    autoRead(socket, username, messageNumber, true);
+    autoRead(socket, messageNumber, true);
 }
 
-Message autoRead(int socket, const string& username, const string& messageNr, const bool printReturn) {
+Message autoRead(int socket, const string& messageNr, const bool printReturn) {
     sendMessage(socket, "READ\n");
-    sendMessage(socket, username + "\n");
     sendMessage(socket, messageNr+ "\n");
 
     Message msg;
@@ -253,18 +260,15 @@ Message autoRead(int socket, const string& username, const string& messageNr, co
 }
 
 void userDelete(int socket) {
-    string username, messageNumber;
-    cout << "Enter username: ";
-    getline(cin, username);
+    string messageNumber;
     cout << "Enter message number: ";
     getline(cin, messageNumber);
 
-    autoDelete(socket, username, messageNumber, true);
+    autoDelete(socket, messageNumber, true);
 }
 
-string autoDelete(int socket, const string& username, const string& messageNr, bool printReturn) {
+string autoDelete(int socket, const string& messageNr, bool printReturn) {
     sendMessage(socket, "DEL\n");
-    sendMessage(socket, username + "\n");
     sendMessage(socket, messageNr + "\n");
 
     string reply;
@@ -277,4 +281,102 @@ void sendMessage(int socket, const string& message) {
     if (write(socket, message.c_str(), message.length()) == -1) {
         cerr << "Error sending message: " << message << endl;
     }
+}
+
+bool userLogin(int socket) {
+    string username, password;
+    char ch;
+
+    cout << "Enter username: ";
+    getline(cin, username);
+    cout << "Enter password: ";
+    password = getpass();
+
+    sendMessage(socket, "LOGIN\n");
+    sendMessage(socket, username + "\n");
+    sendMessage(socket, password + "\n");
+
+    string reply;
+    readLine(socket, &reply);
+
+    if (reply != "OK") {
+        cout << "Login Failed!" << endl;
+        return false;
+    }
+    cout << "Login successful!" << endl;
+    return true;
+}
+
+int getch()
+{
+    int ch;
+    // https://man7.org/linux/man-pages/man3/termios.3.html
+    struct termios t_old, t_new;
+
+    // https://man7.org/linux/man-pages/man3/termios.3.html
+    // tcgetattr() gets the parameters associated with the object referred
+    //   by fd and stores them in the termios structure referenced by
+    //   termios_p
+    tcgetattr(STDIN_FILENO, &t_old);
+
+    // copy old to new to have a base for setting c_lflags
+    t_new = t_old;
+
+    // https://man7.org/linux/man-pages/man3/termios.3.html
+    //
+    // ICANON Enable canonical mode (described below).
+    //   * Input is made available line by line (max 4096 chars).
+    //   * In noncanonical mode input is available immediately.
+    //
+    // ECHO   Echo input characters.
+    t_new.c_lflag &= ~(ICANON | ECHO);
+
+    // sets the attributes
+    // TCSANOW: the change occurs immediately.
+    tcsetattr(STDIN_FILENO, TCSANOW, &t_new);
+
+    ch = getchar();
+
+    // reset stored attributes
+    tcsetattr(STDIN_FILENO, TCSANOW, &t_old);
+
+    return ch;
+}
+
+const char *getpass()
+{
+    int show_asterisk = 0;
+
+    const char BACKSPACE = 127;
+    const char RETURN = 10;
+
+    unsigned char ch = 0;
+    std::string password;
+
+    printf("Password: ");
+
+    while ((ch = getch()) != RETURN)
+    {
+        if (ch == BACKSPACE)
+        {
+            if (password.length() != 0)
+            {
+                if (show_asterisk)
+                {
+                    printf("\b \b"); // backslash: \b
+                }
+                password.resize(password.length() - 1);
+            }
+        }
+        else
+        {
+            password += ch;
+            if (show_asterisk)
+            {
+                printf("*");
+            }
+        }
+    }
+    printf("\n");
+    return password.c_str();
 }
